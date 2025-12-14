@@ -1,8 +1,12 @@
 import aiomysql
 import logging
+import warnings
 from typing import List, Dict, Any
 from sqlpilot.database.base import DatabaseAdapter
 from sqlpilot.core.config import DatabaseConfig
+
+# Suppress aiomysql warnings (like "Field ... won't be calculated")
+warnings.filterwarnings("ignore", category=Warning, module="aiomysql")
 
 logger = logging.getLogger(__name__)
 

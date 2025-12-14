@@ -68,23 +68,87 @@ def optimize(
                 if verbose and "raw_content" in result:
                     console.print(result["raw_content"])
             else:
-                # Diagnosis
+                from rich.table import Table
+                from rich.columns import Columns
+                from rich.markdown import Markdown
+                from rich.syntax import Syntax
+                from rich.text import Text
+                
+                # --- Header ---
+                console.print(f"\n[bold blue]SQLPilot Optimization Report[/bold blue] (Target: {database})")
+                
+                # --- SQL Comparison ---
+                grid = Table.grid(expand=True, padding=1)
+                grid.add_column(justify="left", ratio=1)
+                grid.add_column(justify="left", ratio=1)
+                
+                orig_sql = Syntax(result.get("original_sql", sql), "sql", theme="monokai", line_numbers=True)
+                opt_sql_text = result.get("optimized_sql", "N/A")
+                opt_sql_syntax = Syntax(opt_sql_text, "sql", theme="monokai", line_numbers=True)
+                
+                grid.add_row(
+                    Panel(orig_sql, title="[yellow]Original SQL[/yellow]", border_style="yellow"),
+                    Panel(opt_sql_syntax, title="[green]Optimized SQL[/green]", border_style="green")
+                )
+                console.print(grid)
+                
+                # --- Diagnosis & Explanation ---
                 if "diagnosis" in result:
-                    console.print(Panel(JSON.from_data(result["diagnosis"]), title="[blue]Diagnosis[/blue]"))
+                    diag = result["diagnosis"]
+                    diag_table = Table(show_header=True, header_style="bold magenta")
+                    diag_table.add_column("Root Cause", style="dim")
+                    diag_table.add_column("Bottlenecks")
+                    
+                    bottlenecks = "\n".join([f"• {b}" for b in diag.get("bottlenecks", [])])
+                    diag_table.add_row(diag.get("root_cause", "Unknown"), bottlenecks)
+                    
+                    console.print(Panel(diag_table, title="Diagnosis"))
                 
-                # Optimized SQL
-                console.print(Panel(result.get("optimized_sql", "N/A"), title="[green]Optimized SQL[/green]"))
+                # Explanation (Markdown)
+                explanation = result.get("explanation", "")
+                if explanation:
+                    console.print(Panel(Markdown(explanation), title="Analysis"))
                 
-                # Validation
+                # --- Validation ---
                 if "validation" in result:
-                    console.print(Panel(JSON.from_data(result["validation"]), title="[yellow]Validation Results[/yellow]"))
-                
-                # Explanation
-                console.print(Panel(result.get("explanation", ""), title="Explanation"))
-                
+                    val = result["validation"]
+                    val_table = Table(title="Validation Results", expand=True)
+                    val_table.add_column("Check", justify="right", style="cyan", no_wrap=True)
+                    val_table.add_column("Status", justify="center")
+                    val_table.add_column("Details")
+                    
+                    # Semantic
+                    sem = val.get("semantic_check", {})
+                    sem_status = f"[green]{sem.get('status')}[/green]" if sem.get('status') == 'passed' else f"[red]{sem.get('status')}[/red]"
+                    val_table.add_row("Semantic", sem_status, sem.get("details", ""))
+                    
+                    # Performance
+                    perf = val.get("performance_check", {})
+                    perf_status = "[green]passed[/green]" if perf.get("status") == "passed" else f"[red]{perf.get('status')}[/red]"
+                    
+                    orig_ms = perf.get("original_time_ms", 0)
+                    opt_ms = perf.get("optimized_time_ms", 0)
+                    ratio = perf.get("improvement_ratio", 0)
+                    
+                    perf_details = f"Original: {orig_ms:.2f}ms -> Optimized: {opt_ms:.2f}ms (Ratio: {ratio:.2f})"
+                    val_table.add_row("Performance", perf_status, perf_details)
+                    
+                    # Boundary
+                    bound = val.get("boundary_tests", {})
+                    bound_status = bound.get("status")
+                    if bound_status:
+                        val_table.add_row("Boundary Tests", bound_status, f"Run: {bound.get('tests_run', 0)}")
+                        
+                    console.print(val_table)
+
+                # --- Final Verdict ---
                 confidence = result.get("confidence", "UNKNOWN")
-                color = "green" if confidence == "HIGH" else "yellow" if confidence == "MEDIUM" else "red"
-                console.print(f"Confidence: [{color}]{confidence}[/{color}]")
+                rec = result.get("recommendation", "manual_review")
+                
+                conf_color = "green" if confidence == "HIGH" else "yellow" if confidence == "MEDIUM" else "red"
+                rec_color = "green" if rec == "auto_apply" else "yellow" if rec == "manual_review" else "red"
+                
+                console.print(f"\nFinal Verdict: Confidence [{conf_color}]{confidence}[/{conf_color}] | Recommendation: [{rec_color}]{rec.upper()}[/{rec_color}]\n")
 
         finally:
             await db.close()

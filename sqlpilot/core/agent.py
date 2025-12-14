@@ -72,7 +72,6 @@ class SQLAgent:
                 if content:
                     try:
                         # Attempt to parse specific JSON block if wrapped in markdown
-                        # (LLMs often wrap JSON in ```json ... ```)
                         if "```json" in content:
                             json_str = content.split("```json")[1].split("```")[0].strip()
                         elif "```" in content:
@@ -80,7 +79,47 @@ class SQLAgent:
                         else:
                             json_str = content
                         
-                        return json.loads(json_str)
+                        final_result = json.loads(json_str)
+
+                        # --- ITERATIVE FEEDBACK LOOP ---
+                        # Check strictness of output
+                        if "validation" in final_result and "performance_check" in final_result["validation"]:
+                            perf = final_result["validation"]["performance_check"]
+                            ratio = perf.get("improvement_ratio", 1.0)
+                            status = perf.get("status", "unknown")
+                            recommendation = final_result.get("recommendation", "manual_review")
+                            
+                            # Threshold for "good enough" improvement (e.g., 10% gain = 1.1x)
+                            # Or if the recommendation is explicitly 'reject' (meaning Agent gave up or found no issue)
+                            
+                            is_rejected = recommendation == "reject"
+                            is_minimal_gain = isinstance(ratio, (int, float)) and ratio < 1.1
+
+                            # If we are not done (minimal gain AND not rejected yet), prompt for retry
+                            # But we must avoid infinite loops if the agent really thinks it's the best.
+                            # We can rely on the Agent's "recommendation" field. 
+                            # If Agent says "auto_apply" or "manual_review" BUT gain is low, we challenge it.
+                            
+                            if not is_rejected and is_minimal_gain:
+                                # We only challenge if we haven't challenged this specific outcome too many times?
+                                # For now, let's just challenge once per "solution" finding step, but relying on max_iterations to bail us out.
+                                # A better way is to check if the Agent explicitly argued "Optimal already".
+                                
+                                # Let's construct a feedback message.
+                                feedback = (
+                                    f"System Feedback: The optimization proposed only shows an improvement ratio of {ratio}. "
+                                    "This is considered insufficient (< 1.1). "
+                                    "Please try a DIFFERENT approach (e.g. check for missing indexes, different join types, or schema changes). "
+                                    "If you firmly believe no further optimization is possible, please set 'recommendation' to 'reject' "
+                                    "and explain why in 'explanation'."
+                                )
+                                
+                                logger.info(f"Triggering feedback loop: {feedback}")
+                                messages.append({"role": "user", "content": feedback})
+                                continue # NEXT ITERATION
+
+                        return final_result
+
                     except json.JSONDecodeError:
                          # If parsing fails, return raw content but wrapped
                         logger.warning("Failed to parse JSON from final response")
