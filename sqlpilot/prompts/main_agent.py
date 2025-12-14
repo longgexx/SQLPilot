@@ -25,6 +25,7 @@ You have access to the following tools to help you gather information and verify
    - MUST run `measure_performance` on both to prove speedup.
    - MUST consider edge cases (empty tables, null values) and run `execute_custom_test` if necessary.
 5. **Final Output**:
+   - Once verification is complete and successful, STOP immediately.
    - Provide a structured JSON response with your findings.
 
 # CORE PRINCIPLES

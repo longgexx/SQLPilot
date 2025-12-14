@@ -13,7 +13,7 @@ class SQLAgent:
         self.llm = llm
         self.tools = tools
         self.tool_definitions = tools.get_tool_definitions()
-        self.max_iterations = 15
+        self.max_iterations = 30
 
     async def optimize(self, sql: str, database_type: str = "mysql") -> Dict[str, Any]:
         """
